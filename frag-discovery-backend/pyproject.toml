@@ -1,0 +1,31 @@
+[project]
+name = "frag-discovery-backend"
+version = "0.1.0"
+description = "API server for frag-discovery: accounts/auth (Google OAuth), votes, favorites, discovery, and the served recommendation algorithm."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.119",
+  "uvicorn[standard]>=0.35",
+  "sqlalchemy>=2.0.43",
+  "pydantic-settings>=2.10",
+  "google-auth>=2.40",
+  "requests>=2.32",
+  "cachecontrol>=0.14",
+  "numpy>=2.0",
+  "scipy>=1.14",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.4", "httpx>=0.28"]
+
+[tool.uv]
+package = false
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI uses Depends() in argument defaults by design.
+extend-immutable-calls = ["fastapi.Depends"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

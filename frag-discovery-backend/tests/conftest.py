@@ -1,0 +1,111 @@
+import os
+import sqlite3
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+# Deterministic settings for tests. Env vars take precedence over .env in
+# pydantic-settings, and this must be set before the app modules are imported
+# (get_settings() + the engine are built at import time).
+os.environ["GOOGLE_CLIENT_ID"] = "test-client.apps.googleusercontent.com"
+
+from app import catalog as catalog_mod
+from app import recommender
+from app.catalog import Catalog
+from app.db import Base, get_db
+from app.main import app
+
+
+@pytest.fixture
+def client(tmp_path):
+    """TestClient whose DB is an isolated temp-file SQLite database."""
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'test.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    test_session = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    Base.metadata.create_all(engine)
+
+    def override_get_db():
+        db = test_session()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+# ---- Mini fragrance catalog (read-only, separate sqlite file) ----------------
+
+# Columns the catalog feature-builder / hydration queries need. Everything the
+# mini catalog reads must exist here (mirrors the real `fragrances` table).
+_MINICAT_COLUMNS = """
+id INTEGER PRIMARY KEY, url TEXT, name TEXT, brand TEXT, year INTEGER,
+rating REAL, votes INTEGER,
+longevity_very_weak INTEGER, longevity_weak INTEGER, longevity_moderate INTEGER,
+longevity_long_lasting INTEGER, longevity_eternal INTEGER,
+sillage_intimate INTEGER, sillage_moderate INTEGER, sillage_strong INTEGER,
+sillage_enormous INTEGER,
+rating_love INTEGER, rating_like INTEGER, rating_ok INTEGER,
+rating_dislike INTEGER, rating_hate INTEGER,
+season_spring INTEGER, season_summer INTEGER, season_fall INTEGER,
+season_winter INTEGER, time_day INTEGER, time_night INTEGER,
+gender_female INTEGER, gender_more_female INTEGER, gender_unisex INTEGER,
+gender_more_male INTEGER, gender_male INTEGER,
+price_way_overpriced INTEGER, price_overpriced INTEGER, price_ok INTEGER,
+price_good_value INTEGER, price_great_value INTEGER,
+top_notes_json TEXT, middle_notes_json TEXT, base_notes_json TEXT,
+accords_json TEXT, image_url TEXT, availability TEXT, in_production INTEGER,
+shop_count INTEGER, featured_price REAL, price_min REAL, price_max REAL,
+currency TEXT
+"""
+
+
+def _build_mini_catalog(path: str, n: int = 20) -> None:
+    """Create a tiny catalog DB with `n` recommendable fragrances (votes=100,
+    rating=4.5 → all in the pool). Frags alternate between two brands and carry
+    distinct note pyramids so the recommender has features to learn from."""
+    conn = sqlite3.connect(path)
+    conn.execute(f"CREATE TABLE fragrances ({_MINICAT_COLUMNS})")
+    for i in range(1, n + 1):
+        brand = "Citrus Co" if i % 2 == 1 else "Wood Co"
+        top = "Bergamot" if i % 2 == 1 else "Grapefruit"
+        base = "Sandalwood" if i % 2 == 0 else "Amber"
+        conn.execute(
+            "INSERT INTO fragrances (id, url, name, brand, year, rating, votes,"
+            " rating_love, rating_like, rating_ok, rating_dislike, rating_hate,"
+            " longevity_eternal, sillage_strong, gender_unisex, season_spring,"
+            " in_production, top_notes_json, middle_notes_json, base_notes_json,"
+            " accords_json, image_url)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                i, f"https://x/{i}", f"Frag {i}", brand, 2020, 4.5, 100,
+                40, 30, 20, 5, 5,
+                30, 40, 100, 100,
+                1,
+                f'[{{"name": "{top}", "strength_pct": 80}}]',
+                '[{"name": "Rose", "strength_pct": 60}]',
+                f'[{{"name": "{base}", "strength_pct": 70}}]',
+                '[{"name": "Fresh", "strength_pct": 50}]',
+                f"https://x/{i}.png",
+            ),
+        )
+    conn.commit()
+    conn.close()
+
+
+@pytest.fixture
+def catalog(tmp_path, monkeypatch):
+    """Point the app's catalog at a fresh temp mini-catalog and reset the
+    per-user recommender cache so each test starts clean."""
+    path = tmp_path / "fragrances.db"
+    _build_mini_catalog(str(path))
+    monkeypatch.setattr(catalog_mod, "catalog", Catalog(str(path)))
+    recommender.reset_model_cache()
+    return catalog_mod.catalog

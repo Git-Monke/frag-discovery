@@ -1,0 +1,121 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Geist Variable', sans-serif;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    /* Custom palette carried over from the original HTML app */
+    --color-love: var(--love);
+    --color-like: var(--like);
+    --color-ok: var(--ok);
+    --color-dislike: var(--dislike);
+    --color-hate: var(--hate);
+    --color-bayesian: var(--bayesian);
+    --color-amber-dim: var(--amber-dim);
+    --color-accord: var(--accord);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * Dark-only theme, mirroring the original Fragrantica Explorer palette:
+ *   bg #0f0f0f · bg2 #1a1a1a · bg3 #242424 · border #333
+ *   amber #d4a84b (primary) · amber-dim #9a7535 (ring)
+ *   text #e8e8e8 · text-dim #888 · text-muted #555
+ *   sentiment: love #e05c5c · like #5cb85c · ok #5b8ac7 · dislike #c87c3c · hate #9e4444
+ *   bayesian (score blue) #7cb8d4 · accord violet #6a5acd
+ */
+:root {
+    --background: #0f0f0f;
+    --foreground: #e8e8e8;
+    --card: #1a1a1a;
+    --card-foreground: #e8e8e8;
+    --popover: #1a1a1a;
+    --popover-foreground: #e8e8e8;
+    --primary: #d4a84b;
+    --primary-foreground: #1a1510;
+    --secondary: #242424;
+    --secondary-foreground: #e8e8e8;
+    --muted: #242424;
+    --muted-foreground: #888;
+    --accent: #242424;
+    --accent-foreground: #e8e8e8;
+    --destructive: #e05c5c;
+    --border: #333;
+    --input: #333;
+    --ring: #9a7535;
+    --chart-1: #d4a84b;
+    --chart-2: #7cb8d4;
+    --chart-3: #5cb85c;
+    --chart-4: #c87c3c;
+    --chart-5: #9e4444;
+    --radius: 0.5rem;
+    --sidebar: #1a1a1a;
+    --sidebar-foreground: #e8e8e8;
+    --sidebar-primary: #d4a84b;
+    --sidebar-primary-foreground: #1a1510;
+    --sidebar-accent: #242424;
+    --sidebar-accent-foreground: #e8e8e8;
+    --sidebar-border: #333;
+    --sidebar-ring: #9a7535;
+    --love: #e05c5c;
+    --like: #5cb85c;
+    --ok: #5b8ac7;
+    --dislike: #c87c3c;
+    --hate: #9e4444;
+    --bayesian: #7cb8d4;
+    --amber-dim: #9a7535;
+    --accord: #6a5acd;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  html {
+    @apply font-sans;
+    }
+}
