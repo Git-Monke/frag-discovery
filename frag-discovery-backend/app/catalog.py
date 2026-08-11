@@ -14,6 +14,7 @@ fragrances are surfaced.
 
 import json
 import math
+import os
 import sqlite3
 from functools import cached_property
 
@@ -29,6 +30,11 @@ REC_NOTE_MIN_DF = 50           # note (layer, name) min pool document frequency
 REC_USE_BRANDS = True          # include the top-100 brand one-hot block
 REC_SPARSE_NORM = True         # L2-normalize the note/accord block per row
 N_DENSE = 36                   # dense feature dims (before sparse blocks)
+
+# PPMI-SVD embedding recommender (see Settings): REC_EMBED_DIM>0 substitutes
+# the note/accord block with the K-dim embedding in the recommender path.
+REC_EMBED_DIM = get_settings().rec_embed_dim
+REC_EMBED_DIR = get_settings().rec_embed_dir
 
 
 def _shares(*vals) -> list:
@@ -114,13 +120,77 @@ class Catalog:
             """
         ).fetchone()
         mean_liked = (liked_row[0] / liked_row[1]) if liked_row and liked_row[1] else 0.7
+
+        # Note usage stats (for /api/stats + /api/ingredient-stats).
+        note_rows = conn.execute(
+            """
+            WITH all_notes AS (
+                SELECT json_extract(value,'$.name') AS name, 'top' AS layer
+                FROM fragrances, json_each(top_notes_json) WHERE top_notes_json IS NOT NULL
+                UNION ALL
+                SELECT json_extract(value,'$.name'), 'mid'
+                FROM fragrances, json_each(middle_notes_json) WHERE middle_notes_json IS NOT NULL
+                UNION ALL
+                SELECT json_extract(value,'$.name'), 'base'
+                FROM fragrances, json_each(base_notes_json) WHERE base_notes_json IS NOT NULL
+            )
+            SELECT name,
+                COUNT(*) AS total,
+                SUM(CASE WHEN layer='top'  THEN 1 ELSE 0 END) AS top_count,
+                SUM(CASE WHEN layer='mid'  THEN 1 ELSE 0 END) AS mid_count,
+                SUM(CASE WHEN layer='base' THEN 1 ELSE 0 END) AS base_count
+            FROM all_notes WHERE name IS NOT NULL
+            GROUP BY name ORDER BY total DESC
+            """
+        ).fetchall()
+        try:
+            note_images = {r[0]: r[1] for r in conn.execute(
+                "SELECT name, image_url FROM notes WHERE image_url IS NOT NULL"
+            ).fetchall()}
+        except sqlite3.OperationalError:
+            # Catalog without a `notes` table (e.g. minimal test fixtures).
+            note_images = {}
+        note_stats = [
+            {"name": r[0], "total": r[1], "top": r[2], "mid": r[3], "base": r[4],
+             "image_url": note_images.get(r[0])}
+            for r in note_rows
+        ]
+
+        # Accord usage stats.
+        accord_rows = conn.execute(
+            """
+            SELECT acc_name, COUNT(*) AS count, AVG(acc_strength) AS avg_strength
+            FROM (
+                SELECT json_extract(value,'$.name')         AS acc_name,
+                       json_extract(value,'$.strength_pct') AS acc_strength
+                FROM fragrances, json_each(accords_json)
+                WHERE accords_json IS NOT NULL
+            )
+            WHERE acc_name IS NOT NULL
+            GROUP BY acc_name ORDER BY count DESC
+            """
+        ).fetchall()
+        accord_stats = [
+            {"name": r[0], "count": r[1],
+             "avg_strength": round(r[2], 1) if r[2] is not None else None}
+            for r in accord_rows
+        ]
+
+        total = conn.execute("SELECT COUNT(*) FROM fragrances").fetchone()[0]
+        brands = [r[0] for r in conn.execute(
+            "SELECT DISTINCT brand FROM fragrances WHERE brand IS NOT NULL ORDER BY brand"
+        ).fetchall()]
         conn.close()
         return {
             "mean_rating": round(C, 4),
             "median_votes": m,
+            "total_count": total,
+            "brand_list": brands,
             "mean_price_value": round(C_price, 4),
             "median_price_votes": m_price,
             "mean_liked": round(mean_liked, 4),
+            "note_stats": note_stats,
+            "accord_stats": accord_stats,
         }
 
     # ---- Recommender feature matrix (global, over ALL frags) ----
@@ -302,8 +372,51 @@ class Catalog:
 
     def is_recommendable(self, frag_id: int) -> bool:
         """True if a fragrance is in the recommendable pool (20+ votes, 3.8+
-        Bayesian). The pool is what the recommender and (future) Browse serve."""
+        Bayesian). The pool is what the recommender and Browse serve."""
         return frag_id in self.features["pool_ids"]
+
+    # ---- Recommender matrix (embedding-substituted when REC_EMBED_DIM > 0) ----
+
+    @cached_property
+    def rec_matrix(self):
+        """Recommender feature matrix: the full one-hot matrix when
+        REC_EMBED_DIM is 0, else the embedding-substituted matrix with layout
+        [dense | brands | emb]. Rows stay aligned to `features["ids"]`;
+        fragrances missing from the embedding get a zero vector (cold rows).
+        Port of frag-scraper `_build_recommender_matrix`."""
+        F = self.features
+        M = F["matrix"]
+        if not REC_EMBED_DIM:
+            return M
+        emb_path = os.path.join(REC_EMBED_DIR, f"frag_emb_d{REC_EMBED_DIM}.npy")
+        ids_path = os.path.join(REC_EMBED_DIR, f"frag_ids_d{REC_EMBED_DIM}.npy")
+        if not (os.path.isfile(emb_path) and os.path.isfile(ids_path)):
+            raise FileNotFoundError(
+                f"Recommender embedding d{REC_EMBED_DIM} not found in "
+                f"{REC_EMBED_DIR}. Run `make sync-catalog` to symlink "
+                "frag-scraper/experiments/note_embeddings/out into "
+                "data/embeddings, or set REC_EMBED_DIM=0 for the sparse path."
+            )
+        emb = np.load(emb_path)
+        emb_ids = np.load(ids_path)
+        emb_of = {int(fid): i for i, fid in enumerate(emb_ids)}
+        n_dense, n_brands = F["n_dense"], F["n_brands"]
+        E = np.zeros((M.shape[0], emb.shape[1]), dtype=np.float32)
+        for i, fid in enumerate(F["ids"]):
+            r = emb_of.get(int(fid))
+            if r is not None:
+                E[i] = emb[r]
+        if REC_USE_BRANDS and n_brands:
+            R = sparse.hstack(
+                [M[:, :n_dense], M[:, -n_brands:], sparse.csr_matrix(E)],
+                format="csr",
+            ).astype(np.float32)
+        else:
+            R = sparse.hstack(
+                [M[:, :n_dense], sparse.csr_matrix(E)],
+                format="csr",
+            ).astype(np.float32)
+        return R
 
     # ---- Display hydration ----
 

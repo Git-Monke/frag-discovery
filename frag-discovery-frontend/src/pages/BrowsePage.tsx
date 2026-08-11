@@ -37,7 +37,7 @@ export default function BrowsePage() {
 				<div className="min-h-0 flex-1 overflow-y-auto">
 					{search.isError ? (
 						<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-							Error loading results. Is the backend running on :3232?
+							Error loading results. Is the backend running on :8000?
 						</div>
 					) : search.isLoading || (search.isFetching && !search.data) ? (
 						<ResultsSkeleton />

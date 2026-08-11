@@ -1,30 +1,6 @@
 """Tests for the per-user data endpoints (favorites, feedback, recommend,
 fragrance detail) against a temp mini-catalog."""
 
-import pytest
-
-from app.auth import routes
-from app.auth.google import GoogleClaims
-
-
-@pytest.fixture
-def login(client, monkeypatch):
-    """Sign in a user and return Authorization headers. Call with `sub` to
-    switch users (each call overrides the stubbed Google verifier)."""
-
-    def _login(sub: str = "user-1", email: str | None = None):
-        email = email or f"{sub}@example.com"
-        claims = GoogleClaims(
-            sub=sub, email=email, email_verified=True, name="Tester", picture=None
-        )
-        monkeypatch.setattr(routes, "verify_google_id_token", lambda _t: claims)
-        r = client.post("/api/auth/google", json={"id_token": "id-token"})
-        assert r.status_code == 200
-        return {"Authorization": f"Bearer {r.json()['access_token']}"}
-
-    return _login
-
-
 # --- auth gating -------------------------------------------------------------
 
 
@@ -56,8 +32,11 @@ def test_recommend_cold_start_then_trained(client, catalog, login):
     body = client.get("/api/recommend?limit=10", headers=h).json()
     assert body["profile"]["cold_start"] is False
     assert len(body["results"]) == 10
-    assert all(x["p"] is not None for x in body["results"])
-    assert all(not x["exploration"] for x in body["results"])
+    # Full discovery algorithm once trained: MMR-diversified exploit picks
+    # (p set) mixed with P-weighted exploration picks (p=None) at the decayed
+    # explore rate (starts at 50%, decays over 1000 swipes).
+    assert any(x["p"] is not None and not x["exploration"] for x in body["results"])
+    assert any(x["p"] is None and x["exploration"] for x in body["results"])
 
 
 def test_recommend_profile_levels_and_swipes(client, catalog, login):

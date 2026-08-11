@@ -20,6 +20,21 @@ class Settings(BaseSettings):
     # 3.8+ Bayesian) plus any frag the user has seen/favorited.
     catalog_db: str = "data/fragrances.db"
 
+    # Recommender embedding (PPMI-SVD). When rec_embed_dim > 0, the sparse
+    # note/accord block is replaced by the K-dim embedding in the recommender
+    # train/predict path (layout [dense | brands | emb]); the one-hot LR is
+    # then blended in logit space when rec_blend is on (see app/recommender.py).
+    # 20 = frag-scraper's production dim (`make app-embed`). 0 = sparse path.
+    rec_embed_dim: int = 20
+
+    # Directory holding frag_emb_d{K}.npy + frag_ids_d{K}.npy. Symlinked from
+    # frag-scraper/experiments/note_embeddings/out by `make sync-catalog`.
+    rec_embed_dir: str = "data/embeddings"
+
+    # Logit-blend the reduced-dim LR with the full one-hot LR (only applies
+    # when rec_embed_dim > 0): P = sigmoid((z_reduced + alpha*z_onehot)/tau).
+    rec_blend: bool = True
+
     # Allowed CORS origin for the frontend (dev: Vite on :5173).
     frontend_origin: str = "http://localhost:5173"
 

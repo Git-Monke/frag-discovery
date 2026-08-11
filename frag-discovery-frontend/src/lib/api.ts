@@ -21,8 +21,8 @@ async function request<T>(
 	token?: string | null,
 ): Promise<T> {
 	// Attach the signed-in user's bearer token to every request so the per-user
-	// endpoints (favorites/recommend/feedback/fragrance) work. Catalog endpoints
-	// still on the reference backend simply ignore the header.
+	// endpoints (favorites/recommend/feedback/search) work. Public endpoints
+	// simply ignore the header.
 	const authToken = token ?? getAuthToken();
 	let res: Response;
 	try {

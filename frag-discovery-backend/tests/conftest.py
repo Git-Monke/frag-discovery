@@ -7,12 +7,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 # Deterministic settings for tests. Env vars take precedence over .env in
-# pydantic-settings, and this must be set before the app modules are imported
+# pydantic-settings, and these must be set before the app modules are imported
 # (get_settings() + the engine are built at import time).
 os.environ["GOOGLE_CLIENT_ID"] = "test-client.apps.googleusercontent.com"
+# Tests run the sparse recommender path (no embedding .npy files needed).
+os.environ["REC_EMBED_DIM"] = "0"
 
 from app import catalog as catalog_mod
 from app import recommender
+from app.auth import routes
+from app.auth.google import GoogleClaims
 from app.catalog import Catalog
 from app.db import Base, get_db
 from app.main import app
@@ -39,6 +43,24 @@ def client(tmp_path):
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def login(client, monkeypatch):
+    """Sign in a user and return Authorization headers. Call with `sub` to
+    switch users (each call overrides the stubbed Google verifier)."""
+
+    def _login(sub: str = "user-1", email: str | None = None):
+        email = email or f"{sub}@example.com"
+        claims = GoogleClaims(
+            sub=sub, email=email, email_verified=True, name="Tester", picture=None
+        )
+        monkeypatch.setattr(routes, "verify_google_id_token", lambda _t: claims)
+        r = client.post("/api/auth/google", json={"id_token": "id-token"})
+        assert r.status_code == 200
+        return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    return _login
 
 
 # ---- Mini fragrance catalog (read-only, separate sqlite file) ----------------
@@ -69,14 +91,15 @@ currency TEXT
 
 def _build_mini_catalog(path: str, n: int = 20) -> None:
     """Create a tiny catalog DB with `n` recommendable fragrances (votes=100,
-    rating=4.5 → all in the pool). Frags alternate between two brands and carry
-    distinct note pyramids so the recommender has features to learn from."""
+    rating=4.5 → all in the pool), plus two out-of-pool frags (below the votes
+    floor / below the Bayesian floor) and a `notes` table for /api/notes +
+    note_stats. Pool frags alternate between two brands and carry distinct
+    note pyramids so the recommender has features to learn from."""
     conn = sqlite3.connect(path)
     conn.execute(f"CREATE TABLE fragrances ({_MINICAT_COLUMNS})")
-    for i in range(1, n + 1):
-        brand = "Citrus Co" if i % 2 == 1 else "Wood Co"
-        top = "Bergamot" if i % 2 == 1 else "Grapefruit"
-        base = "Sandalwood" if i % 2 == 0 else "Amber"
+    conn.execute("CREATE TABLE notes (name TEXT, image_url TEXT)")
+
+    def insert(fid, name, brand, votes, rating, top, base):
         conn.execute(
             "INSERT INTO fragrances (id, url, name, brand, year, rating, votes,"
             " rating_love, rating_like, rating_ok, rating_dislike, rating_hate,"
@@ -85,7 +108,7 @@ def _build_mini_catalog(path: str, n: int = 20) -> None:
             " accords_json, image_url)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                i, f"https://x/{i}", f"Frag {i}", brand, 2020, 4.5, 100,
+                fid, f"https://x/{fid}", name, brand, 2020, rating, votes,
                 40, 30, 20, 5, 5,
                 30, 40, 100, 100,
                 1,
@@ -93,9 +116,26 @@ def _build_mini_catalog(path: str, n: int = 20) -> None:
                 '[{"name": "Rose", "strength_pct": 60}]',
                 f'[{{"name": "{base}", "strength_pct": 70}}]',
                 '[{"name": "Fresh", "strength_pct": 50}]',
-                f"https://x/{i}.png",
+                f"https://x/{fid}.png",
             ),
         )
+
+    for i in range(1, n + 1):
+        brand = "Citrus Co" if i % 2 == 1 else "Wood Co"
+        top = "Bergamot" if i % 2 == 1 else "Grapefruit"
+        base = "Sandalwood" if i % 2 == 0 else "Amber"
+        insert(i, f"Frag {i}", brand, 100, 4.5, top, base)
+
+    # Out-of-pool frags (never recommendable / never searchable).
+    insert(n + 1, "Low Votes", "Citrus Co", 5, 3.0, "Bergamot", "Amber")
+    insert(n + 2, "Low Bay", "Wood Co", 100, 3.0, "Grapefruit", "Sandalwood")
+
+    # Note images used by /api/notes + note_stats.
+    conn.executemany("INSERT INTO notes (name, image_url) VALUES (?, ?)", [
+        ("Bergamot", "https://x/bergamot.png"),
+        ("Rose", "https://x/rose.png"),
+        ("Sandalwood", "https://x/sandalwood.png"),
+    ])
     conn.commit()
     conn.close()
 
@@ -103,9 +143,9 @@ def _build_mini_catalog(path: str, n: int = 20) -> None:
 @pytest.fixture
 def catalog(tmp_path, monkeypatch):
     """Point the app's catalog at a fresh temp mini-catalog and reset the
-    per-user recommender cache so each test starts clean."""
+    per-user recommender + ordering caches so each test starts clean."""
     path = tmp_path / "fragrances.db"
     _build_mini_catalog(str(path))
     monkeypatch.setattr(catalog_mod, "catalog", Catalog(str(path)))
-    recommender.reset_model_cache()
+    recommender.reset_caches()
     return catalog_mod.catalog

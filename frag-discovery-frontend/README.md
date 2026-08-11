@@ -28,18 +28,20 @@ site" link and no external outbound link.
 ## Backend contract
 
 The frontend knows **only the backend's HTTP API** (`/api/...`), per the
-`frag-discovery` architecture. Right now it runs against the **reference
-backend** (the frag-scraper Flask app) so the UI is fully functional; a new
-backend will replace it later without touching the frontend.
+`frag-discovery` architecture. The backend is the FastAPI app in
+`../frag-discovery-backend` (auth, browse, discover, favorites) served on
+`:8000`.
 
-To run against the reference backend (served on `:3232`):
+To run:
 
 ```bash
-# 1) Start the backend (from the frag-scraper repo)
-cd ../frag-scraper && python app.py   # serves /api/* on :3232
+# 1) Link the catalog + note embeddings (from the repo root)
+make sync-catalog
 
-# 2) Run this frontend (Vite proxies /api → :3232)
-cd ../frag-discovery-frontend
+# 2) Start the backend
+cd ../frag-discovery-backend && uv run uvicorn app.main:app --port 8000
+
+# 3) Run this frontend (Vite proxies /api → :8000)
 npm install
 npm run dev        # http://localhost:5173
 ```

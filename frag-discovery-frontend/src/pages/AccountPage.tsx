@@ -126,7 +126,7 @@ export default function AccountPage() {
 					size="sm"
 					className="text-xs"
 					disabled
-					title="Not available on the reference backend"
+					title="Not implemented yet — clear favorites/ratings in Favorites/Discover"
 				>
 					Reset taste model
 				</Button>

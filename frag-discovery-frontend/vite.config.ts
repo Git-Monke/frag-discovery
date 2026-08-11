@@ -14,23 +14,11 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // Google auth → new FastAPI backend on :8000 (regex key so it wins over
-      // the broader /api rule below, which Vite doesn't sort reliably).
-      '^/api/auth': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      // Per-user data endpoints (favorites, feedback, recommend, fragrance
-      // detail) → the new per-user backend on :8000. Keys are regex-tested in
-      // insertion order, so these win over the /api fallback below.
-      '^/api/(favorites|recommend|feedback|fragrance)': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
-      // Everything else (search, stats, notes, ingredient-stats) → reference
-      // Flask backend (python app.py) on 3232, until the browse swap lands.
+      // Everything (/api/auth, per-user data, and browse search/stats/notes)
+      // lives on the new FastAPI backend on :8000 — the reference backend is
+      // no longer part of the app (see plans/browse-full-discovery.md).
       '/api': {
-        target: 'http://localhost:3232',
+        target: 'http://localhost:8000',
         changeOrigin: true,
       },
     },

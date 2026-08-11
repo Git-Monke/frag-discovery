@@ -1,5 +1,14 @@
 # PLAN — Next pass: Browse swap + recommender upgrades (deferred from v3)
 
+> **STATUS: DONE (v4, `plans/browse-full-discovery.md`).** Both parts shipped:
+> Browse (`/api/search`, `/api/stats`, `/api/notes`, `/api/ingredient-stats`)
+> moved onto the new per-user backend (pool-restricted, discovery-ranked), and
+> the recommender is now the full pipeline (PPMI-SVD embedding d20 + logit
+> blend, MMR diversification, exploration decay). The reference Flask backend
+> is retired from the app (proxy → `:8000`; `reference-backend` Makefile
+> target removed). Still open from this doc's scope: **infinite scroll** and
+> the optional upgrades below (RECO_LEVELS=5, XGB, model persistence).
+
 > Everything here was **explicitly deferred** in `plans/per-user-discover.md` (the
 > per-user Discover/Favorites pass, v3). This doc keeps the details so the next
 > pass can pick them up without re-deriving them from `frag-scraper/app.py`.

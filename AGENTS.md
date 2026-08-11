@@ -7,7 +7,7 @@ recommendation work in the `frag-scraper` project (`/home/monke/Projects/frag-sc
 
 Single GitHub **monorepo `frag-discovery`** (private, this repo). The scraper +
 reference project stays a **sibling repo** at `/home/monke/Projects/frag-scraper`
-(see Reference) — `make sync-catalog` and `make reference-backend` depend on it.
+(see Reference) — `make sync-catalog` depends on it.
 
 ```text
 frag-discovery/
@@ -98,29 +98,39 @@ regenerates types; no other coupling.
   - **Per-user Discover/Favorites pass done** — `favorites` + `user_feedback`
     tables (FK→users, unique `(user_id, frag_id)`), and the data routes:
     `GET/POST/DELETE /api/favorites`, `POST/DELETE /api/feedback/<id>`,
-    `GET /api/recommend`, `GET /api/fragrance/<id>`. A **core content-based LR
-    recommender** (port of frag-scraper's LR arm) is trained **per user** from
-    their ratings/favorites (cold-start random → top-P exploit, `REC_MIN_FAVORITES=5`),
-    cached per user, persisted via the user's votes in `data/app.db`. The catalog
-    (`fragrances.db`) is opened **read-only**; the recommendable pool = 20+ votes
-    and ≥ 3.8 Bayesian. `make sync-catalog` symlinks the catalog into `data/`.
-  - `pytest` green (auth + data).
-- **Frontend** (`frag-discovery-frontend`): Google sign-in (header + Account page +
-  inline gate), Discover/Favorites gated behind login, and per-user data calls now
-  **send the bearer token** (auto-attached in `api.request`). Vite proxy routes
-  `^/api/auth` and `^/api/(favorites|recommend|feedback|fragrance)` → `:8000`;
-  Browse (`/api/search`, `/api/stats`, `/api/notes`, `/api/ingredient-stats`) still
-  hits the reference backend on `:3232`.
+    `GET /api/recommend`, `GET /api/fragrance/<id>`.
+  - **Browse on the full discovery algorithm (v4) done** — `/api/search`,
+    `/api/stats`, `/api/notes`, `/api/ingredient-stats` now live on this
+    backend (the reference Flask backend is retired from the app). The
+    recommender is the **full frag-scraper pipeline**: a **PPMI-SVD embedding
+    arm** (`REC_EMBED_DIM=20` replaces the note/accord block with a 20-dim
+    embedding in train/predict) **logit-blended** with the full one-hot LR
+    (`P = sigmoid((z_red + 4·z_1hot)/8)`), **MMR diversification** of exploit
+    picks over the notes/accords space (λ=0.1, top-500 window, softmax), and
+    the **exploration-decay arm** (50% → 10% over 1000 swipes; P-weighted
+    picks flagged `exploration`). `discovery_sequence()` is the single
+    pipeline shared by Discover (`/api/recommend`, fresh per batch) and
+    Browse (`/api/search?sort=recommended`, deterministic + cached per
+    (user, profile, filters) for stable pagination). Browse is **restricted
+    to the recommendable pool** (≥20 votes + ≥3.8 Bayesian) for every sort.
+    Embeddings are symlinked into `data/embeddings` by `make sync-catalog`;
+    `REC_EMBED_DIM=0` falls back to the sparse path.
+  - `pytest` green (auth, data, search, stats, recommender units).
+- **Frontend** (`frag-discovery-frontend`): Google sign-in, Discover/Favorites
+  gated behind login, bearer-token data calls, and a single `/api` Vite proxy
+  → `:8000`. Browse ranks by the discovery model (MMR + exploration); the
+  `% match` badge renders from `recommended_score` and the
+  `recommended_trained` banner shows while the taste profile is cold.
 - **Run (use the `Makefile` in the repo root):**
-  - `make sync-catalog` — symlink `fragrances.db` into `frag-discovery-backend/data/`
-  - `make backend` — new FastAPI backend on `:8000`
-  - `make reference-backend` — frag-scraper Flask backend (Browse data) on `:3232`
-  - `make frontend` — Vite dev server on `:5173`
+  - `make sync-catalog` — symlink `fragrances.db` + note embeddings into
+    `frag-discovery-backend/data/`
+  - `make backend` — FastAPI backend on `:8000` (auth + browse + discover)
+  - `make frontend` — Vite dev server on `:5173` (proxies `/api` → `:8000`)
   - `make test` / `make lint` / `make install`
-- **Next step:** port Browse (`/api/search`, `/api/stats`, `/api/notes`,
-  `/api/ingredient-stats`) onto the new backend — restricted to the recommendable
-  pool and ranked per-user — plus the recommender upgrades (MMR diversification,
-  exploration-decay arm, PPMI-SVD embedding/blend). Details: `plans/browse-swap-and-recommender-upgrades.md`.
+- **Next step:** infinite scroll for Browse (pagination stays for now), plus
+  optional upgrades from the deferred list — RECO_LEVELS=5 taste scale (needs
+  frontend), XGB engine, per-user model persistence across restarts. Details:
+  `plans/browse-swap-and-recommender-upgrades.md`.
 
 ## Frontend decisions (locked in 2025-10)
 

@@ -15,10 +15,11 @@ frag-discovery/
   plans/                      per-pass working plans (also see PLAN.md, AGENTS.md)
 ```
 
-> **Sibling repo:** the scraper + reference implementation live in the separate
+> **Sibling repo (data source only):** the scraper lives in the separate
 > `frag-scraper` repo (`/home/monke/Projects/frag-scraper`). Its `fragrances.db`
-> catalog (~135k fragrances) is the data source; its Flask `app.py` still serves
-> Browse until that's ported to the new backend (see `plans/browse-swap-and-recommender-upgrades.md`).
+> catalog (~135k fragrances) and PPMI-SVD note embeddings are the data source;
+> `make sync-catalog` symlinks them in. The old Flask reference backend is no
+> longer part of the app.
 
 ## Quickstart
 
@@ -27,7 +28,7 @@ Prerequisites: [`uv`](https://docs.astral.sh/uv/), Node.js + npm, and the siblin
 
 ```bash
 make install         # uv sync (backend) + npm install (frontend)
-make sync-catalog    # symlink fragrances.db into frag-discovery-backend/data/
+make sync-catalog    # symlink fragrances.db + note embeddings into frag-discovery-backend/data/
 ```
 
 **Google OAuth** (only sign-in method): copy the `.env.example` → `.env` in both
@@ -35,9 +36,8 @@ subdirs and set the client ID — backend `GOOGLE_CLIENT_ID`, frontend
 `VITE_GOOGLE_CLIENT_ID` (same "Web application" client in Google Cloud Console).
 
 ```bash
-make backend            # FastAPI backend   → http://localhost:8000  (auth + Discover/Favorites data)
-make reference-backend  # reference backend → http://localhost:3232  (Browse data, interim)
-make frontend           # Vite dev server   → http://localhost:5173  (proxy routes both)
+make backend            # FastAPI backend → http://localhost:8000  (auth + browse + discover)
+make frontend           # Vite dev server → http://localhost:5173  (proxies /api → :8000)
 ```
 
 Open **http://localhost:5173** — Browse is public; Discover/Favorites require
@@ -53,10 +53,12 @@ make build   # frontend production build
 
 ## Project state
 
-- **Done:** Google OAuth auth, per-user Discover/Favorites, core per-user LR
-  recommender (cold-start random → top-P exploit), favorited flags, Vite proxy.
-- **Next:** port Browse onto the new backend (pool-restricted, per-user ranking)
-  + recommender upgrades (MMR, exploration decay, PPMI-SVD embedding).
+- **Done:** Google OAuth auth; per-user Discover/Favorites; the **full**
+  discovery recommender (PPMI-SVD embedding + logit blend, MMR diversification,
+  exploration decay) powering both Discover and Browse; Browse restricted to
+  the recommendable pool and ranked per-user; reference backend retired.
+- **Next:** infinite scroll for Browse (pagination for now), plus optional
+  upgrades — 5-level taste scale, XGB engine, per-user model persistence.
 
 Details live in `AGENTS.md` (architecture, locked decisions, status) and
 `plans/` (per-pass plans). The API contract source of truth is the backend's

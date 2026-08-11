@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help install backend reference-backend frontend test lint build clean sync-catalog
+.PHONY: help install backend frontend test lint build clean sync-catalog
 
 help: ## Show available commands
 	@printf '\033[36m%s\033[0m\n' 'frag-discovery — dev commands'
@@ -14,16 +14,14 @@ install: ## Install backend (uv sync) + frontend (npm install)
 	cd frag-discovery-backend && uv sync
 	cd frag-discovery-frontend && npm install
 
-backend: ## New FastAPI backend (auth + data) — http://localhost:8000
+backend: ## FastAPI backend (auth + browse + discover) — http://localhost:8000
 	cd frag-discovery-backend && uv run uvicorn app.main:app --reload --port 8000
 
-sync-catalog: ## Symlink the frag-scraper catalog DB into the backend data dir
+sync-catalog: ## Symlink the frag-scraper catalog DB + note embeddings into backend data/
 	mkdir -p frag-discovery-backend/data
 	ln -sfn "$(CURDIR)/../frag-scraper/fragrances.db" frag-discovery-backend/data/fragrances.db
-	@echo 'Catalog linked: frag-discovery-backend/data/fragrances.db'
-
-reference-backend: ## Reference frag-scraper Flask backend (data) — http://localhost:3232
-	cd ../frag-scraper && python app.py
+	ln -sfn "$(CURDIR)/../frag-scraper/experiments/note_embeddings/out" frag-discovery-backend/data/embeddings
+	@echo 'Catalog + embeddings linked into frag-discovery-backend/data/'
 
 frontend: ## Vite dev server — http://localhost:5173
 	cd frag-discovery-frontend && npm run dev
